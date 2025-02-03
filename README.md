@@ -2,6 +2,8 @@
 
 An MCP (Message Control Protocol) server designed to handle interactive journaling sessions with support for emotional analysis and automatic conversation saving.
 
+<a href="https://glama.ai/mcp/servers/kiay3i2li7"><img width="380" height="200" src="https://glama.ai/mcp/servers/kiay3i2li7/badge" alt="Journaling Server MCP server" /></a>
+
 ## Features
 
 - Automatic journaling session management
