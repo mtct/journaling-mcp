@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/mtct-journaling-mcp-badge.png)](https://mseep.ai/app/mtct-journaling-mcp)
+
 # MCP Journaling Server
 
 An MCP (Message Control Protocol) server designed to handle interactive journaling sessions with support for emotional analysis and automatic conversation saving.
