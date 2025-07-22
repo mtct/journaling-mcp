@@ -18,6 +18,8 @@ class JournalConfig:
     max_recent_entries: int = 5
     enable_backup: bool = True
     backup_dir: Optional[Path] = None
+    enable_database: bool = True
+    database_path: Optional[Path] = None
     
     # Default configuration values
     DEFAULTS: Dict[str, Any] = field(default_factory=lambda: {
@@ -27,6 +29,8 @@ class JournalConfig:
         "MAX_RECENT_ENTRIES": "5",
         "ENABLE_BACKUP": "true",
         "BACKUP_DIR": None,
+        "ENABLE_DATABASE": "true",
+        "DATABASE_PATH": None,
     })
     
     def __post_init__(self) -> None:
@@ -47,6 +51,9 @@ class JournalConfig:
         
         if self.enable_backup and self.backup_dir is None:
             self.backup_dir = self.journal_dir / "backups"
+        
+        if self.enable_database and self.database_path is None:
+            self.database_path = self.journal_dir / "conversations.db"
     
     def _setup_directories(self) -> None:
         """Create necessary directories."""
@@ -132,6 +139,8 @@ def load_config() -> JournalConfig:
         "MAX_RECENT_ENTRIES": "5",
         "ENABLE_BACKUP": "true",
         "BACKUP_DIR": None,
+        "ENABLE_DATABASE": "true",
+        "DATABASE_PATH": None,
     }
     
     try:
@@ -145,13 +154,21 @@ def load_config() -> JournalConfig:
         if backup_dir_env := os.getenv("BACKUP_DIR"):
             backup_dir = Path(backup_dir_env)
         
+        enable_database = os.getenv("ENABLE_DATABASE", defaults["ENABLE_DATABASE"]).lower() == "true"
+        
+        database_path = None
+        if database_path_env := os.getenv("DATABASE_PATH"):
+            database_path = Path(database_path_env)
+        
         return JournalConfig(
             journal_dir=journal_dir,
             filename_prefix=filename_prefix,
             file_extension=file_extension,
             max_recent_entries=max_recent_entries,
             enable_backup=enable_backup,
-            backup_dir=backup_dir
+            backup_dir=backup_dir,
+            enable_database=enable_database,
+            database_path=database_path
         )
         
     except (ValueError, TypeError) as e:

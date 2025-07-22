@@ -45,7 +45,7 @@ class JournalingMCPServer:
         
         # Initialize services
         self.journal_service = JournalService(self.config)
-        self.conversation_service = ConversationService()
+        self.conversation_service = ConversationService(self.config)
         
         # Initialize FastMCP server
         self.mcp = FastMCP("journaling")
