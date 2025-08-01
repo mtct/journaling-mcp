@@ -80,16 +80,16 @@ src/journaling_mcp/
 
 ### MCP Tools
 
-- `start_new_session()`: Initialize new conversation session with unique ID
-- `record_interaction(user_message, assistant_message)`: Record message pairs with metadata
-- `generate_session_summary(summary, emotional_analysis, reflections, tags, mood_rating)`: Create comprehensive journal entry
-- `get_journal_statistics()`: Get collection statistics and metrics
-- `add_journal_tags(filepath, tags)`: Add tags to existing entries
+- `start_new_session()`: Initialize new conversation session with unique ID in database
+- `record_interaction(user_message, assistant_message)`: Record message pairs with metadata in database
+- `generate_session_summary(summary, emotional_analysis, reflections, tags, mood_rating)`: Save comprehensive session summary to database
+- `get_journal_statistics()`: Get database statistics and metrics
+- `add_conversation_tags(session_id, tags)`: Add tags to existing conversation sessions
 
 ### MCP Resources
 
-- `journals://recent`: Access recent journal entries
-- `journals://statistics`: Get statistics as JSON
+- `journals://recent`: Access recent conversation sessions from database
+- `journals://statistics`: Get database statistics as JSON
 
 ### Configuration
 
@@ -101,15 +101,19 @@ Enhanced environment variables in `.env`:
 - `ENABLE_BACKUP`: Enable automatic backups (default: true)
 - `BACKUP_DIR`: Backup directory (optional, defaults to journal_dir/backups)
 
-### Entry Format
+### Data Storage
 
-Enhanced journal entries include:
-1. Title with metadata (tags, mood rating)
-2. Timestamped conversation transcript
-3. Summary section
-4. Emotional analysis
-5. Personal reflections
-6. Statistics footer (word count, entry count, timestamps)
+**SQLite Database Only (v0.2.0+):**
+All conversation data is now stored exclusively in SQLite database (`conversations.db`):
+1. Conversation sessions with unique IDs and metadata
+2. Individual messages with timestamps and speaker identification
+3. Session summaries with emotional analysis, reflections, tags, and mood ratings
+4. Complete conversation history with searchable content
+5. Statistics and analytics on conversation patterns
+
+**Database Schema:**
+- `conversations`: Session metadata, creation/update timestamps, summary data
+- `messages`: Individual messages linked to conversations with speaker and content
 
 ### Security & Validation
 

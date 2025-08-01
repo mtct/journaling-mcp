@@ -8,6 +8,7 @@ conversation management, and automatic file organization.
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 
@@ -125,6 +126,7 @@ class JournalingMCPServer:
                                          mood_rating: Optional[int] = None) -> str:
             """
             Generate and save a comprehensive journal entry from the current session.
+            All data is saved to the SQLite database only.
             
             Args:
                 summary: AI-generated summary of the conversation
@@ -134,46 +136,60 @@ class JournalingMCPServer:
                 mood_rating: Mood rating from 1-10
                 
             Returns:
-                Confirmation message with file path
+                Confirmation message with session details
             """
             try:
                 if not self.conversation_service.has_conversation():
                     return "No conversation to summarize. Please start a new session first."
                 
-                # Create journal entry
-                entry = self.journal_service.create_journal_entry(
-                    conversation=self.conversation_service.current_log,
-                    summary=summary,
-                    emotional_analysis=emotional_analysis,
-                    reflections=reflections
-                )
+                # Validate mood rating if provided
+                if mood_rating is not None and (mood_rating < 1 or mood_rating > 10):
+                    return "Invalid mood rating: must be between 1 and 10"
                 
-                # Add tags if provided
-                if tags:
-                    tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
-                    for tag in tag_list:
-                        entry.add_tag(tag)
+                # Prepare metadata for the session summary
+                session_metadata = {
+                    "summary": summary,
+                    "emotional_analysis": emotional_analysis,
+                    "reflections": reflections,
+                    "mood_rating": mood_rating,
+                    "tags": [tag.strip() for tag in tags.split(",") if tag and tag.strip()] if tags else [],
+                    "session_completed": True,
+                    "completion_timestamp": datetime.now().isoformat()
+                }
                 
-                # Set mood rating if provided
-                if mood_rating is not None:
+                # Update conversation metadata in database
+                session_id = self.conversation_service.current_log.session_id
+                if self.conversation_service.db_service:
                     try:
-                        entry.set_mood_rating(mood_rating)
-                    except ValueError as e:
-                        return f"Invalid mood rating: {e}"
+                        # Save summary data to conversation metadata
+                        conversation = self.conversation_service.db_service.db_manager.get_conversation_by_session_id(session_id)
+                        if conversation:
+                            # Update the conversation metadata
+                            import sqlite3
+                            import json
+                            with sqlite3.connect(self.conversation_service.db_service.db_manager.db_path) as conn:
+                                cursor = conn.cursor()
+                                cursor.execute(
+                                    "UPDATE conversations SET metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                    (json.dumps(session_metadata), conversation.id)
+                                )
+                                conn.commit()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to update conversation metadata: {e}")
                 
-                # Save the entry
-                file_path = self.journal_service.save_journal_entry(entry)
+                # Get conversation statistics
+                conv_summary = self.conversation_service.get_conversation_summary()
+                total_words = sum(len(entry.message.split()) for entry in self.conversation_service.current_log.entries)
                 
-                # Get statistics
-                stats = entry.metadata.to_dict()
+                return (f"Session summary saved to database (ID: {session_id})\\n"
+                       f"Statistics: {total_words} words, "
+                       f"{conv_summary['total_entries']} conversation entries\\n"
+                       f"Tags: {', '.join(session_metadata['tags']) if session_metadata['tags'] else 'None'}\\n"
+                       f"Mood rating: {mood_rating if mood_rating else 'Not set'}")
                 
-                return (f"Journal entry saved to: {file_path}\\n"
-                       f"Statistics: {stats['word_count']} words, "
-                       f"{stats['entry_count']} conversation entries")
-                
-            except JournalError as e:
+            except JournalingError as e:
                 self.logger.error(f"Error generating session summary: {e}")
-                return f"Error saving journal: {e}"
+                return f"Error saving session summary: {e}"
             except Exception as e:
                 self.logger.error(f"Unexpected error generating summary: {e}")
                 return f"Unexpected error: {e}"
@@ -181,24 +197,28 @@ class JournalingMCPServer:
         @self.mcp.tool()
         async def get_journal_statistics() -> str:
             """
-            Get comprehensive statistics about the journal collection.
+            Get comprehensive statistics about conversation database.
             
             Returns:
-                Formatted statistics about journal entries
+                Formatted statistics about conversation sessions and messages
             """
             try:
-                stats = self.journal_service.get_journal_statistics()
+                if not self.conversation_service.db_service:
+                    return "Database service not available"
                 
-                return f"""Journal Statistics:
-• Total entries: {stats['total_entries']}
-• Total words: {stats['total_words']:,}
-• Average words per entry: {stats['average_words_per_entry']:,}
-• Total size: {stats['total_size_bytes'] / 1024:.1f} KB
-• Date range: {stats['oldest_entry'] or 'N/A'} to {stats['newest_entry'] or 'N/A'}
-• Journal directory: {stats['journal_directory']}
-• Backup enabled: {stats['backup_enabled']}"""
+                stats = self.conversation_service.db_service.get_conversation_statistics()
                 
-            except JournalError as e:
+                return f"""Conversation Database Statistics:
+• Total conversations: {stats.get('total_conversations', 0)}
+• Total messages: {stats.get('total_messages', 0)}
+• Average messages per conversation: {stats.get('average_messages_per_conversation', 0):.1f}
+• User messages: {stats.get('user_messages', 0)}
+• Assistant messages: {stats.get('assistant_messages', 0)}
+• Database file: {stats.get('database_file', 'N/A')}
+• First conversation: {stats.get('first_conversation_date', 'N/A')}
+• Last conversation: {stats.get('last_conversation_date', 'N/A')}"""
+                
+            except JournalingError as e:
                 self.logger.error(f"Error getting statistics: {e}")
                 return f"Error getting statistics: {e}"
             except Exception as e:
@@ -206,23 +226,51 @@ class JournalingMCPServer:
                 return f"Unexpected error: {e}"
         
         @self.mcp.tool()
-        async def add_journal_tags(filepath: str, tags: str) -> str:
+        async def add_conversation_tags(session_id: str, tags: str) -> str:
             """
-            Add tags to an existing journal entry.
+            Add tags to an existing conversation session.
             
             Args:
-                filepath: Path to the journal file
+                session_id: Session ID of the conversation
                 tags: Comma-separated tags to add
                 
             Returns:
                 Confirmation message
             """
             try:
-                # For now, just return a message indicating this would add tags
-                # Full implementation would require parsing and updating the markdown file
+                if not self.conversation_service.db_service:
+                    return "Database service not available"
+                
+                # Parse tags
                 tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
-                return f"Would add tags {tag_list} to journal at {filepath}. "
-                "Note: Tag functionality requires markdown parsing implementation."
+                if not tag_list:
+                    return "No valid tags provided"
+                
+                # Get existing conversation
+                conversation = self.conversation_service.db_service.db_manager.get_conversation_by_session_id(session_id)
+                if not conversation:
+                    return f"Conversation with session ID {session_id} not found"
+                
+                # Get existing metadata
+                existing_metadata = conversation.metadata or {}
+                existing_tags = existing_metadata.get('tags', [])
+                
+                # Add new tags (avoid duplicates)
+                updated_tags = list(set(existing_tags + tag_list))
+                existing_metadata['tags'] = updated_tags
+                
+                # Update database
+                import sqlite3
+                import json
+                with sqlite3.connect(self.conversation_service.db_service.db_manager.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE conversations SET metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (json.dumps(existing_metadata), conversation.id)
+                    )
+                    conn.commit()
+                
+                return f"Added tags to conversation {session_id}: {', '.join(tag_list)}\\nAll tags: {', '.join(updated_tags)}"
                 
             except Exception as e:
                 self.logger.error(f"Error adding tags: {e}")
@@ -234,32 +282,74 @@ class JournalingMCPServer:
         @self.mcp.resource("journals://recent")
         def get_recent_journals() -> str:
             """
-            Get contents of recent journal entries.
+            Get contents of recent conversation sessions from database.
             
             Returns:
-                Formatted content of recent journal entries
+                Formatted content of recent conversation sessions
             """
             try:
-                content = self.journal_service.get_recent_journals_content()
-                return content
-            except JournalError as e:
-                self.logger.error(f"Error getting recent journals: {e}")
-                return f"Error reading journals: {e}"
+                if not self.conversation_service.db_service:
+                    return "Database service not available"
+                
+                # Get recent conversations from database
+                recent_conversations = self.conversation_service.db_service.get_recent_conversations(limit=5)
+                
+                if not recent_conversations:
+                    return "No conversation sessions found in database"
+                
+                content_parts = []
+                for conv in recent_conversations:
+                    # Load full conversation
+                    conv_log = self.conversation_service.db_service.load_conversation(conv['session_id'])
+                    if not conv_log:
+                        continue
+                    
+                    # Format conversation header
+                    content_parts.append(f"# Conversation Session - {conv['created_at'][:10]}")
+                    content_parts.append(f"Session ID: {conv['session_id']}")
+                    content_parts.append(f"Messages: {conv['total_messages']}")
+                    
+                    # Add metadata if available
+                    if conv.get('metadata'):
+                        metadata = conv['metadata']
+                        if isinstance(metadata, dict):
+                            if metadata.get('summary'):
+                                content_parts.append(f"\\n**Summary:** {metadata['summary']}")
+                            if metadata.get('emotional_analysis'):
+                                content_parts.append(f"\\n**Emotional Analysis:** {metadata['emotional_analysis']}")
+                            if metadata.get('tags'):
+                                content_parts.append(f"\\n**Tags:** {', '.join(metadata['tags'])}")
+                            if metadata.get('mood_rating'):
+                                content_parts.append(f"\\n**Mood Rating:** {metadata['mood_rating']}/10")
+                    
+                    # Add conversation entries
+                    content_parts.append("\\n## Conversation")
+                    for entry in conv_log.entries:
+                        speaker = "**User:**" if entry.speaker == SpeakerType.USER else "**Assistant:**"
+                        content_parts.append(f"\\n{speaker} {entry.message}")
+                    
+                    content_parts.append("\\n---\\n")
+                
+                return "\\n".join(content_parts)
+                
             except Exception as e:
-                self.logger.error(f"Unexpected error getting recent journals: {e}")
-                return f"Unexpected error: {e}"
+                self.logger.error(f"Error getting recent conversations: {e}")
+                return f"Error reading conversations: {e}"
         
         @self.mcp.resource("journals://statistics")
         def get_statistics_resource() -> str:
             """
-            Get journal statistics as a resource.
+            Get conversation statistics from database as a resource.
             
             Returns:
-                JSON-formatted statistics about the journal collection
+                JSON-formatted statistics about the conversation database
             """
             try:
                 import json
-                stats = self.journal_service.get_journal_statistics()
+                if not self.conversation_service.db_service:
+                    return json.dumps({"error": "Database service not available"}, indent=2)
+                
+                stats = self.conversation_service.db_service.get_conversation_statistics()
                 return json.dumps(stats, indent=2, default=str)
             except Exception as e:
                 self.logger.error(f"Error getting statistics resource: {e}")
