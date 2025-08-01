@@ -170,3 +170,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 .DS_Store
+
+# Journal data directory - contains user conversations and logs
+journal/
