@@ -1,5 +1,7 @@
 # MCP Journaling Server / Server MCP per Journaling
 
+⚠️ **Experimental Repository / Repository Sperimentale**: This repository is experimental and is used for testing and learning Claude Code features. / *Questo repository è sperimentale e viene utilizzato per testare e imparare le funzionalità di Claude Code.*
+
 A professional MCP (Message Control Protocol) server for interactive journaling with emotional analysis, conversation management, and SQLite database persistence.
 
 *Un server MCP (Message Control Protocol) professionale per journaling interattivo con analisi emotiva, gestione conversazioni e persistenza database SQLite.*
